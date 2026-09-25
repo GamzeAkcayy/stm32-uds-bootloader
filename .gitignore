@@ -1,0 +1,17 @@
+# Derleme ve Geçici Dosyalar
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+*.o
+*.d
+*.su
+
+# IDE ve İşletim Sistemi
+.metadata/
+.settings/
+*.launch
+.DS_Store
+Thumbs.db
