@@ -20,7 +20,7 @@
 #include "main.h"
 #include "isotp.h"
 #include "usb_host.h"
-
+#include "uds.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -120,6 +120,7 @@ int main(void)
       Error_Handler();
   }
   IsoTp_Init(&isotp_ctx, MyCanSend);
+  UDS_Init(MyCanSend);
   // FIFO0'a mesaj düştüğünde CPU'ya kesme sinyali gönder
   if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
       Error_Handler();
@@ -431,6 +432,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         if (result == ISOTP_COMPLETE)
         {
             HAL_GPIO_TogglePin(GPIOD, LD6_Pin);  // veri tamamen alındı, görsel işaret
+            UDS_HandleRequest(isotp_ctx.buffer, isotp_ctx.received_len);
         }
     }
 }
