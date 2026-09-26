@@ -41,7 +41,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
+CAN_HandleTypeDef hcan1;
 
 I2S_HandleTypeDef hi2s3;
 
@@ -54,9 +54,9 @@ SPI_HandleTypeDef hspi1;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_I2C1_Init(void);
 static void MX_I2S3_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_CAN1_Init(void);
 void MX_USB_HOST_Process(void);
 
 /* USER CODE BEGIN PFP */
@@ -74,7 +74,6 @@ void JumpToApplication(void);
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -84,39 +83,75 @@ int main(void)
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_I2C1_Init();
   MX_I2S3_Init();
   MX_SPI1_Init();
   MX_USB_HOST_Init();
+  MX_CAN1_Init();
+
   /* USER CODE BEGIN 2 */
-  JumpToApplication();
+  // 1. CAN Filtresini Kur (Tüm mesajları kabul et)
+  CAN_FilterTypeDef sFilterConfig;
+  sFilterConfig.FilterBank = 0;
+  sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+  sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+  sFilterConfig.FilterIdHigh = 0x0000;
+  sFilterConfig.FilterIdLow = 0x0000;
+  sFilterConfig.FilterMaskIdHigh = 0x0000;
+  sFilterConfig.FilterMaskIdLow = 0x0000;
+  sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+  sFilterConfig.FilterActivation = ENABLE;
+  sFilterConfig.SlaveStartFilterBank = 14;
+
+  if (HAL_CAN_ConfigFilter(&hcan1, &sFilterConfig) != HAL_OK) {
+      Error_Handler();
+  }
+
+  // 2. CAN Modülünü Başlat
+  if (HAL_CAN_Start(&hcan1) != HAL_OK) {
+      Error_Handler();
+  }
+
+  // FIFO0'a mesaj düştüğünde CPU'ya kesme sinyali gönder
+  if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
+      Error_Handler();
+  }
+
+  // 3. Mesaj Hazırlığı
+  CAN_TxHeaderTypeDef txHeader;
+  uint8_t txData[8] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22};
+  uint32_t txMailbox;
+
+  txHeader.StdId = 0x7E8;
+  txHeader.IDE = CAN_ID_STD;
+  txHeader.RTR = CAN_RTR_DATA;
+  txHeader.DLC = 8;
+  txHeader.TransmitGlobalTime = DISABLE;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+      HAL_StatusTypeDef status = HAL_CAN_AddTxMessage(&hcan1, &txHeader, txData, &txMailbox);
+      if (status == HAL_OK) {
+          HAL_GPIO_TogglePin(GPIOD, LD4_Pin); // Yeşil LED (Başarılı)
+      } else {
+          HAL_GPIO_TogglePin(GPIOD, LD5_Pin); // Kırmızı LED (Başarısız)
+      }
+      HAL_Delay(500);
+
     /* USER CODE END WHILE */
-    HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
-    HAL_Delay(500);
+    MX_USB_HOST_Process();
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
-
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -163,36 +198,39 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief I2C1 Initialization Function
+  * @brief CAN1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2C1_Init(void)
+static void MX_CAN1_Init(void)
 {
 
-  /* USER CODE BEGIN I2C1_Init 0 */
+  /* USER CODE BEGIN CAN1_Init 0 */
 
-  /* USER CODE END I2C1_Init 0 */
+  /* USER CODE END CAN1_Init 0 */
 
-  /* USER CODE BEGIN I2C1_Init 1 */
+  /* USER CODE BEGIN CAN1_Init 1 */
 
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.ClockSpeed = 100000;
-  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  /* USER CODE END CAN1_Init 1 */
+  hcan1.Instance = CAN1;
+  hcan1.Init.Prescaler = 6;
+  hcan1.Init.Mode = CAN_MODE_NORMAL;
+  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan1.Init.TimeSeg1 = CAN_BS1_11TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;
+  hcan1.Init.TimeTriggeredMode = DISABLE;
+  hcan1.Init.AutoBusOff = DISABLE;
+  hcan1.Init.AutoWakeUp = DISABLE;
+  hcan1.Init.AutoRetransmission = DISABLE;
+  hcan1.Init.ReceiveFifoLocked = DISABLE;
+  hcan1.Init.TransmitFifoPriority = DISABLE;
+  if (HAL_CAN_Init(&hcan1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2C1_Init 2 */
+  /* USER CODE BEGIN CAN1_Init 2 */
 
-  /* USER CODE END I2C1_Init 2 */
+  /* USER CODE END CAN1_Init 2 */
 
 }
 
@@ -355,6 +393,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(OTG_FS_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : Audio_SCL_Pin */
+  GPIO_InitStruct.Pin = Audio_SCL_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
+  HAL_GPIO_Init(Audio_SCL_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : MEMS_INT2_Pin */
   GPIO_InitStruct.Pin = MEMS_INT2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
@@ -367,23 +413,56 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-#define APP_ADDRESS 0x08008000U
+#define APP_START_ADDRESS  0x08008000U // Kendi App başlangıç adresin
 
 typedef void (*pFunction)(void);
 
-void JumpToApplication(void)
+/* USER CODE BEGIN 4 */
+CAN_RxHeaderTypeDef rxHeader;
+uint8_t rxData[8];
+
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-    uint32_t appStack = *(__IO uint32_t*)APP_ADDRESS;
-    uint32_t appEntry = *(__IO uint32_t*)(APP_ADDRESS + 4);
-
-    pFunction Jump = (pFunction)appEntry;
-
-    __set_MSP(appStack);
-    SCB->VTOR = APP_ADDRESS;
-
-    Jump();
+    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rxHeader, rxData) == HAL_OK) {
+        // Pi'den gelen standart teşhis ID'si (0x7E0) mi?
+        if (rxHeader.StdId == 0x7E0) {
+            // Mavi LED'i (LD6) tetikle: Mesaj başarıyla alındı
+            HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
+        }
+    }
 }
 /* USER CODE END 4 */
+
+/*void JumpToApplication(void)
+{
+    // 1. App alanında geçerli bir Stack Pointer var mı kontrol et
+    uint32_t app_stack_pointer = *(__IO uint32_t*)APP_START_ADDRESS;
+    uint32_t app_reset_handler = *(__IO uint32_t*)(APP_START_ADDRESS + 4);
+
+    // 2. KURAL 1: Sahneyi temizle (Davulcuyu ve kesmeleri sustur)
+    __disable_irq(); // Tüm kesmeleri durdur
+
+    // SysTick sayacını ve kesmesini tamamen kapat
+    SysTick->CTRL = 0;
+    SysTick->VAL  = 0;
+    SysTick->LOAD = 0;
+
+    // NVIC üzerindeki tüm aktif kesme yetkilerini ve bekleyen bayrakları temizle
+    for (uint8_t i = 0; i < 8; i++) {
+        NVIC->ICER[i] = 0xFFFFFFFF; // Interrupt Clear-Enable
+        NVIC->ICPR[i] = 0xFFFFFFFF; // Interrupt Clear-Pending
+    }
+
+    // 3. İşlemcinin Stack Pointer'ını uygulamanın değerine eşitle
+    __set_MSP(app_stack_pointer);
+
+    // 4. Uygulamanın Reset Handler adresine atla
+    pFunction app_entry = (pFunction)app_reset_handler;
+    app_entry();
+}*/
+CAN_RxHeaderTypeDef rxHeader;
+uint8_t rxData[8];
+/*USER CODE END 4 */
 
 /**
   * @brief  This function is executed in case of error occurrence.

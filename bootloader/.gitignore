@@ -1,0 +1,20 @@
+# Derleme Çıktıları
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+*.o
+*.d
+*.su
+
+# STM32CubeIDE / Eclipse Spesifik
+.metadata/
+.settings/
+*.launch
+*.history/
+
+# OS / Sistem Dosyaları
+.DS_Store
+Thumbs.db
