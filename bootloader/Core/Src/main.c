@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "isotp.h"
 #include "usb_host.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -32,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define APP_ADDRESS 0x08008000U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -49,6 +50,7 @@ SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN PV */
 
+IsoTpContext isotp_ctx;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,6 +63,7 @@ void MX_USB_HOST_Process(void);
 
 /* USER CODE BEGIN PFP */
 void JumpToApplication(void);
+void MyCanSend(const uint8_t *data, uint8_t len);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -95,6 +98,7 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
   // 1. CAN Filtresini Kur (Tüm mesajları kabul et)
+
   CAN_FilterTypeDef sFilterConfig;
   sFilterConfig.FilterBank = 0;
   sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
@@ -115,7 +119,7 @@ int main(void)
   if (HAL_CAN_Start(&hcan1) != HAL_OK) {
       Error_Handler();
   }
-
+  IsoTp_Init(&isotp_ctx, MyCanSend);
   // FIFO0'a mesaj düştüğünde CPU'ya kesme sinyali gönder
   if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
       Error_Handler();
@@ -137,13 +141,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      HAL_StatusTypeDef status = HAL_CAN_AddTxMessage(&hcan1, &txHeader, txData, &txMailbox);
-      if (status == HAL_OK) {
-          HAL_GPIO_TogglePin(GPIOD, LD4_Pin); // Yeşil LED (Başarılı)
-      } else {
-          HAL_GPIO_TogglePin(GPIOD, LD5_Pin); // Kırmızı LED (Başarısız)
-      }
-      HAL_Delay(500);
+
 
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
@@ -423,45 +421,43 @@ uint8_t rxData[8];
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rxHeader, rxData) == HAL_OK) {
-        // Pi'den gelen standart teşhis ID'si (0x7E0) mi?
-        if (rxHeader.StdId == 0x7E0) {
-            // Mavi LED'i (LD6) tetikle: Mesaj başarıyla alındı
-            HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
+    CAN_RxHeaderTypeDef rxHeader;
+    uint8_t rxData[8];
+
+    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rxHeader, rxData) == HAL_OK)
+    {
+        IsoTpResult result = IsoTp_OnCanFrameReceived(&isotp_ctx, rxData, rxHeader.DLC);
+
+        if (result == ISOTP_COMPLETE)
+        {
+            HAL_GPIO_TogglePin(GPIOD, LD6_Pin);  // veri tamamen alındı, görsel işaret
         }
     }
 }
-/* USER CODE END 4 */
-
-/*void JumpToApplication(void)
+void MyCanSend(const uint8_t *data, uint8_t len)
 {
-    // 1. App alanında geçerli bir Stack Pointer var mı kontrol et
-    uint32_t app_stack_pointer = *(__IO uint32_t*)APP_START_ADDRESS;
-    uint32_t app_reset_handler = *(__IO uint32_t*)(APP_START_ADDRESS + 4);
+    CAN_TxHeaderTypeDef txHeader;
+    uint32_t txMailbox;
 
-    // 2. KURAL 1: Sahneyi temizle (Davulcuyu ve kesmeleri sustur)
-    __disable_irq(); // Tüm kesmeleri durdur
+    txHeader.StdId = 0x7E0;      // bootloader'ın CAN ID'si (UDS'te tipik tester->ECU adresi)
+    txHeader.IDE = CAN_ID_STD;
+    txHeader.RTR = CAN_RTR_DATA;
+    txHeader.DLC = len;
 
-    // SysTick sayacını ve kesmesini tamamen kapat
-    SysTick->CTRL = 0;
-    SysTick->VAL  = 0;
-    SysTick->LOAD = 0;
+    HAL_CAN_AddTxMessage(&hcan1, &txHeader, (uint8_t*)data, &txMailbox);
+}
 
-    // NVIC üzerindeki tüm aktif kesme yetkilerini ve bekleyen bayrakları temizle
-    for (uint8_t i = 0; i < 8; i++) {
-        NVIC->ICER[i] = 0xFFFFFFFF; // Interrupt Clear-Enable
-        NVIC->ICPR[i] = 0xFFFFFFFF; // Interrupt Clear-Pending
-    }
 
-    // 3. İşlemcinin Stack Pointer'ını uygulamanın değerine eşitle
-    __set_MSP(app_stack_pointer);
+void JumpToApplication(void)
+{
+    uint32_t appStack = *(__IO uint32_t*)APP_ADDRESS;
+    uint32_t appEntry = *(__IO uint32_t*)(APP_ADDRESS + 4);
+    pFunction Jump = (pFunction)appEntry;
 
-    // 4. Uygulamanın Reset Handler adresine atla
-    pFunction app_entry = (pFunction)app_reset_handler;
-    app_entry();
-}*/
-CAN_RxHeaderTypeDef rxHeader;
-uint8_t rxData[8];
+    __set_MSP(appStack);
+    SCB->VTOR = APP_ADDRESS;
+    Jump();
+}
 /*USER CODE END 4 */
 
 /**
