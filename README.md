@@ -91,15 +91,19 @@ python update_client.py --interface can0 --firmware ../app/build/app.bin
 
 ## Results
 
+### Verified so far
+Real flash write confirmed via CubeIDE Memory view after a full CAN-based UDS transfer (0x34 RequestDownload → 0x36 TransferData → 0x37 TransferExit): the bytes `AA BB CC DD` sent over CAN landed correctly at `0x08008000`, with the rest of the erased sector still showing `0xFFFFFFFF` (untouched).
+
+![Flash write verification](docs/flash-write-verification.png)
+
 Filled in after measurement. Do not publish estimates as results.
 
 | Metric                          | Value | Test Setup                                |
-|---------------------------------|-------|-------------------------------------------|
-| Update time for 64 KB image     | TBD   | 500 kbps CAN, 64-byte block size          |
-| Recovery success after cut      | TBD   | N interruptions at random transfer points |
-| Bootloader flash footprint      | TBD   | arm-none-eabi-gcc, -Os                    |
-| Corrupted image rejection       | TBD   | Bit-flip fault injection                  |
-
+|---------------------------------|-------|--------------------------------------------|
+| Update time for 64 KB image     | TBD   | 500 kbps CAN, 64-byte block size           |
+| Recovery success after cut      | TBD   | N interruptions at random transfer points  |
+| Bootloader flash footprint      | TBD   | arm-none-eabi-gcc, -Os                     |
+| Corrupted image rejection       | TBD   | Bit-flip fault injection                   |
 ## Roadmap
 
 - [x] Linker scripts for bootloader and application partitions
