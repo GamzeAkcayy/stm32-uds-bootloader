@@ -1,16 +1,19 @@
 #include "uds.h"
-#include "isotp.h"  // cevap göndermek için lazım olacak
+#include "isotp.h"
+#include "stm32f4xx_hal.h"
 
 #define UDS_SID_DIAGNOSTIC_SESSION_CONTROL 0x10
 #define UDS_SID_REQUEST_DOWNLOAD 0x34
 #define UDS_POSITIVE_RESPONSE_OFFSET 0x40
 #define UDS_SID_TRANSFER_EXIT 0x37
+#define UDS_SID_TRANSFER_DATA 0x36
 
 static IsoTpCanSendFunc uds_send;
 
 typedef struct {
     uint32_t downloadAddress;
     uint32_t downloadSize;
+    uint32_t bytesWritten;
     uint8_t  downloadActive;
 } UdsState;
 
@@ -62,7 +65,20 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 
 			uds_state.downloadAddress = address;
 			uds_state.downloadSize = size;
+			uds_state.bytesWritten = 0;
 			uds_state.downloadActive = 1;
+
+			FLASH_EraseInitTypeDef eraseInit;
+			uint32_t sectorError;
+
+			eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
+			eraseInit.Sector = FLASH_SECTOR_2;
+			eraseInit.NbSectors = 1;
+			eraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+
+			HAL_FLASH_Unlock();
+			HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+			HAL_FLASH_Lock();
 
 			uint8_t response[6];
 			response[0] = UDS_SID_REQUEST_DOWNLOAD + UDS_POSITIVE_RESPONSE_OFFSET;
@@ -73,6 +89,34 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 			response[5] = 0xFF;  // örnek: max blok boyutu 255 byte
 
 			uds_send(response, 6);
+			break;
+		}
+
+
+		case UDS_SID_TRANSFER_DATA:
+		{
+			if (len < 2) {
+				return;
+			}
+
+			uint8_t blockSequenceCounter = data[1];
+			uint16_t dataLen = len - 2;  // SID ve sıra sayacı dışındaki gerçek veri miktarı
+
+			uint32_t writeAddress = uds_state.downloadAddress + uds_state.bytesWritten;
+
+			uint32_t wordToWrite = ((uint32_t)data[5] << 24) | ((uint32_t)data[4] << 16) |
+			                        ((uint32_t)data[3] << 8)  | data[2];
+
+			HAL_FLASH_Unlock();
+			HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, writeAddress, wordToWrite);
+			HAL_FLASH_Lock();
+
+			uds_state.bytesWritten += dataLen;
+
+			uint8_t response[2];
+			response[0] = UDS_SID_TRANSFER_DATA + UDS_POSITIVE_RESPONSE_OFFSET;
+			response[1] = blockSequenceCounter;
+			uds_send(response, 2);
 			break;
 		}
 
