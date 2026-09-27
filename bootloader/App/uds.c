@@ -4,7 +4,7 @@
 #define UDS_SID_DIAGNOSTIC_SESSION_CONTROL 0x10
 #define UDS_SID_REQUEST_DOWNLOAD 0x34
 #define UDS_POSITIVE_RESPONSE_OFFSET 0x40
-#define UDS_SID_REQUEST_DOWNLOAD 0x34
+#define UDS_SID_TRANSFER_EXIT 0x37
 
 static IsoTpCanSendFunc uds_send;
 
@@ -49,7 +49,6 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
             break;
         }
 
-
 		case UDS_SID_REQUEST_DOWNLOAD:
 		{
 			if (len < 11) {
@@ -75,6 +74,14 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 
 			uds_send(response, 6);
 			break;
+		}
+
+		case UDS_SID_TRANSFER_EXIT:
+		{
+		    uint8_t response[1];
+		    response[0] = UDS_SID_TRANSFER_EXIT + UDS_POSITIVE_RESPONSE_OFFSET;
+		    uds_send(response, 1);
+		    break;
 		}
 
 			default:
