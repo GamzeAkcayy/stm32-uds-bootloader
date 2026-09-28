@@ -51,48 +51,58 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len) {
 		break;
 	}
 
-	case UDS_SID_REQUEST_DOWNLOAD: {
-		if (len < 11) {
-			return;  // eksik istek
-		}
+	case UDS_SID_REQUEST_DOWNLOAD:
+	{
+	    if (len < 11) {
+	        return;  // eksik istek
+	    }
 
-		uint32_t address = ((uint32_t) data[3] << 24)
-				| ((uint32_t) data[4] << 16) | ((uint32_t) data[5] << 8)
-				| data[6];
-		uint32_t size = ((uint32_t) data[7] << 24) | ((uint32_t) data[8] << 16)
-				| ((uint32_t) data[9] << 8) | data[10];
+	    uint32_t address = ((uint32_t)data[3] << 24) | ((uint32_t)data[4] << 16) |
+	                       ((uint32_t)data[5] << 8)  | data[6];
+	    uint32_t size    = ((uint32_t)data[7] << 24) | ((uint32_t)data[8] << 16) |
+	                       ((uint32_t)data[9] << 8)  | data[10];
 
-		uds_state.downloadAddress = address;
-		uds_state.downloadSize = size;
-		uds_state.bytesWritten = 0;
-		uds_state.downloadActive = 1;
+	    if (address < APP_FLASH_START || address >= APP_FLASH_END || size == 0 ||
+	        size > APP_FLASH_END - address || address % 4 != 0) {
+	        uds_state.downloadActive = 0;   // reddedilen istek oturumu da kapatır
+	        return;
+	    }
 
-		FLASH_EraseInitTypeDef eraseInit;
-		uint32_t sectorError;
+	    uds_state.downloadActive = 0;       // silme bitene kadar oturum kapalı
 
-		eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
-		eraseInit.Sector = FLASH_SECTOR_2;
-		eraseInit.NbSectors = 1;
-		eraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+	    FLASH_EraseInitTypeDef eraseInit;
+	    uint32_t sectorError;
 
-		if (address < APP_FLASH_START || address >= APP_FLASH_END || size == 0
-				|| size > APP_FLASH_END - address || address % 4 != 0) {
-			return;
-		}
-		HAL_FLASH_Unlock();
-		HAL_FLASHEx_Erase(&eraseInit, &sectorError);
-		HAL_FLASH_Lock();
+	    eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
+	    eraseInit.Sector = FLASH_SECTOR_2;
+	    eraseInit.NbSectors = 1;
+	    eraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
 
-		uint8_t response[6];
-		response[0] = UDS_SID_REQUEST_DOWNLOAD + UDS_POSITIVE_RESPONSE_OFFSET;
-		response[1] = 0x40;
-		response[2] = 0x00;
-		response[3] = 0x00;
-		response[4] = 0x00;
-		response[5] = 0xFF;  // örnek: max blok boyutu 255 byte
+	    HAL_FLASH_Unlock();
+	    HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+	    HAL_FLASH_Lock();
 
-		uds_send(response, 6);
-		break;
+	    if (status != HAL_OK) {
+	        uint8_t nrc[3] = { 0x7F, UDS_SID_REQUEST_DOWNLOAD, 0x72 };
+	        uds_send(nrc, 3);
+	        break;
+	    }
+
+	    uds_state.downloadAddress = address;
+	    uds_state.downloadSize = size;
+	    uds_state.bytesWritten = 0;
+	    uds_state.downloadActive = 1;       // en son açılır
+
+	    uint8_t response[6];
+	    response[0] = UDS_SID_REQUEST_DOWNLOAD + UDS_POSITIVE_RESPONSE_OFFSET;
+	    response[1] = 0x40;
+	    response[2] = 0x00;
+	    response[3] = 0x00;
+	    response[4] = 0x00;
+	    response[5] = 0xFF;  // bunu sonraki adımda 0x42 yapacağız
+
+	    uds_send(response, 6);
+	    break;
 	}
 
 	case UDS_SID_TRANSFER_DATA: {
