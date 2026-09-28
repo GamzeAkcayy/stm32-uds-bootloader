@@ -101,39 +101,46 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 
 		case UDS_SID_TRANSFER_DATA:
 		{
-			if (uds_state.downloadActive == 0) {
-				return;
-			}
+		    if (uds_state.downloadActive == 0) {
+		        return;
+		    }
 
-			if (len != 6) {
-			    return;
-			}
+		    if (len < 3) {          // SID + sayaç + en az 1 byte veri
+		        return;
+		    }
 
-			if (uds_state.downloadSize - uds_state.bytesWritten < 4) {
-			    return;
-			}
+		    uint8_t blockSequenceCounter = data[1];
+		    uint16_t dataLen = len - 2;
 
-			uint8_t blockSequenceCounter = data[1];
-			uint16_t dataLen = len - 2;  // SID ve sıra sayacı dışındaki gerçek veri miktarı
+		    if (dataLen % 4 != 0 || dataLen > 64) {
+		        return;
+		    }
 
-			uint32_t writeAddress = uds_state.downloadAddress + uds_state.bytesWritten;
+		    if (uds_state.downloadSize - uds_state.bytesWritten < dataLen) {
+		        return;
+		    }
 
-			uint32_t wordToWrite = ((uint32_t)data[5] << 24) | ((uint32_t)data[4] << 16) |
-			                        ((uint32_t)data[3] << 8)  | data[2];
+		    uint32_t writeAddress = uds_state.downloadAddress + uds_state.bytesWritten;
 
-			HAL_FLASH_Unlock();
-			HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, writeAddress, wordToWrite);
-			HAL_FLASH_Lock();
+		    HAL_FLASH_Unlock();
+		    for (uint16_t i = 0; i < dataLen; i += 4)
+		    {
+		        uint32_t word = ((uint32_t)data[2 + i + 3] << 24) |
+		                        ((uint32_t)data[2 + i + 2] << 16) |
+		                        ((uint32_t)data[2 + i + 1] << 8)  |
+		                         data[2 + i];
+		        HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, writeAddress + i, word);
+		    }
+		    HAL_FLASH_Lock();
 
-			uds_state.bytesWritten += dataLen;
+		    uds_state.bytesWritten += dataLen;
 
-			uint8_t response[2];
-			response[0] = UDS_SID_TRANSFER_DATA + UDS_POSITIVE_RESPONSE_OFFSET;
-			response[1] = blockSequenceCounter;
-			uds_send(response, 2);
-			break;
+		    uint8_t response[2];
+		    response[0] = UDS_SID_TRANSFER_DATA + UDS_POSITIVE_RESPONSE_OFFSET;
+		    response[1] = blockSequenceCounter;
+		    uds_send(response, 2);
+		    break;
 		}
-
 		case UDS_SID_TRANSFER_EXIT:
 		{
 			uds_state.downloadActive = 0;
