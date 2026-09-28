@@ -7,6 +7,8 @@
 #define UDS_POSITIVE_RESPONSE_OFFSET 0x40
 #define UDS_SID_TRANSFER_EXIT 0x37
 #define UDS_SID_TRANSFER_DATA 0x36
+#define APP_FLASH_START  0x08008000U
+#define APP_FLASH_END    0x0800C000U   // son geçerli adres + 1
 
 static IsoTpCanSendFunc uds_send;
 
@@ -76,6 +78,10 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 			eraseInit.NbSectors = 1;
 			eraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
 
+			if(address< APP_FLASH_START || address>=APP_FLASH_END || size==0
+					|| size > APP_FLASH_END - address || address % 4 !=0){
+					return;
+			}
 			HAL_FLASH_Unlock();
 			HAL_FLASHEx_Erase(&eraseInit, &sectorError);
 			HAL_FLASH_Lock();
@@ -95,8 +101,16 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 
 		case UDS_SID_TRANSFER_DATA:
 		{
-			if (len < 2) {
+			if (uds_state.downloadActive == 0) {
 				return;
+			}
+
+			if (len != 6) {
+			    return;
+			}
+
+			if (uds_state.downloadSize - uds_state.bytesWritten < 4) {
+			    return;
 			}
 
 			uint8_t blockSequenceCounter = data[1];
@@ -122,6 +136,8 @@ void UDS_HandleRequest(const uint8_t *data, uint16_t len)
 
 		case UDS_SID_TRANSFER_EXIT:
 		{
+			uds_state.downloadActive = 0;
+
 		    uint8_t response[1];
 		    response[0] = UDS_SID_TRANSFER_EXIT + UDS_POSITIVE_RESPONSE_OFFSET;
 		    uds_send(response, 1);
