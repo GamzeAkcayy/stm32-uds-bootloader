@@ -110,8 +110,8 @@ Filled in after measurement. Do not publish estimates as results.
 - [x] Safe jump from bootloader to application
 - [x] ISO-TP receive/transmit
 - [x] UDS services (0x10, 0x31, 0x34, 0x36, 0x37)
-- [ ] Flash erase/write driver
-- [ ] CRC32 verification and metadata handling
+- [x] Flash erase/write driver
+- [x] CRC32 verification and metadata handling
 - [ ] Power-loss recovery
 - [ ] Python update client
 - [ ] Unit tests and CI
