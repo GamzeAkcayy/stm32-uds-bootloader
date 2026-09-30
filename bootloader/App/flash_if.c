@@ -87,7 +87,9 @@ uint8_t Flash_AppLooksExecutable(void)
 {
     uint32_t sp = *(volatile uint32_t *)FLASH_APP_START;
     uint32_t rv = *(volatile uint32_t *)(FLASH_APP_START + 4U);
+    uint32_t pc = rv & ~1U;                    /* Thumb biti hariç adres */
 
-    return ((sp & 0x2FFE0000U) == 0x20000000U) &&
-           (rv >= FLASH_APP_START) && (rv < FLASH_APP_END);
+    return (sp > 0x20000000U) && (sp <= 0x20020000U) &&
+           ((rv & 1U) == 1U) &&
+           (pc >= FLASH_APP_START) && (pc < FLASH_APP_END);
 }

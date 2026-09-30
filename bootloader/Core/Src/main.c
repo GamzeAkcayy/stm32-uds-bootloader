@@ -144,6 +144,7 @@ int main(void) {
 	txHeader.TransmitGlobalTime = DISABLE;
 	/* USER CODE END 2 */
 
+
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
@@ -469,22 +470,20 @@ void JumpToApplication(void) {
 	uint32_t appStack = *(volatile uint32_t*) APP_ADDRESS;
 	uint32_t appEntry = *(volatile uint32_t*) (APP_ADDRESS + 4U);
 
-	HAL_RCC_DeInit(); /* saat ve çevre birimlerini sıfırlanmış hale getir */
-	HAL_DeInit();
-
 	__disable_irq();
-	SysTick->CTRL = 0;
-	SysTick->LOAD = 0;
-	SysTick->VAL = 0;
+
+	HAL_CAN_DeInit(&hcan1);        /* CAN'i tamamen kapat, kesmesini de */
+	SysTick->CTRL = 0;              /* SysTick kesmesini durdur */
+
 	for (uint8_t i = 0; i < 8; i++) {
-		NVIC->ICER[i] = 0xFFFFFFFFU; /* bekleyen ve açık tüm kesmeleri kapat */
+		NVIC->ICER[i] = 0xFFFFFFFFU;
 		NVIC->ICPR[i] = 0xFFFFFFFFU;
 	}
-	SCB->ICSR = SCB_ICSR_PENDSTCLR_Msk;
 
-	SCB->VTOR = APP_ADDRESS;
 	__set_MSP(appStack);
-	__enable_irq(); /* PRIMASK=1 kalırsa uygulama HAL_Delay'de takılır */
+	SCB->VTOR = APP_ADDRESS;
+
+	__enable_irq();
 
 	((pFunction) appEntry)();
 }
