@@ -74,7 +74,10 @@ void MX_USB_HOST_Process(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	RCC->AHB1ENR |= (1U << 3);
+	GPIOD->MODER &= ~(3U << 28);
+	GPIOD->MODER |= (1U << 28);
+	GPIOD->BSRR = (1U << 14);   /* PD14 kırmızı: app'in ilk satırına geldik */
   /* USER CODE END 1 */
 
 	  HAL_Init();

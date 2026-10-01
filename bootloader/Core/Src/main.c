@@ -491,6 +491,12 @@ void JumpToApplication(void) {
 	SCB->VTOR = APP_ADDRESS;
 	__enable_irq();
 
+	if ((appEntry & 1U) == 0U) {
+	    // Thumb biti YOK - bu normalde olmamalı
+	    GPIOD->BSRR = (1U << 12);  // yeşil: Thumb bit eksik!
+	    while(1);
+	}
+
 	((pFunction) appEntry)();
 }
 /*USER CODE END 4 */

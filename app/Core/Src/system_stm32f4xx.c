@@ -166,6 +166,10 @@ const uint8_t APBPrescTable[8]  = {0, 0, 0, 0, 1, 2, 3, 4};
   */
 void SystemInit(void)
 {
+	  RCC->AHB1ENR |= (1U << 3);
+	  GPIOD->MODER &= ~(3U << 24);
+	  GPIOD->MODER |= (1U << 24);
+	  GPIOD->BSRR = (1U << 12);
   /* FPU settings ------------------------------------------------------------*/
   #if (__FPU_PRESENT == 1) && (__FPU_USED == 1)
     SCB->CPACR |= ((3UL << 10*2)|(3UL << 11*2));  /* set CP10 and CP11 Full Access */
