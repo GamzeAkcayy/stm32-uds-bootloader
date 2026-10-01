@@ -1,132 +1,146 @@
-# stm32-can-bootloader
+# stm32-uds-bootloader
 
-Secure CAN bootloader for STM32 with UDS/ISO-TP firmware update, CRC32 verification and power-loss recovery.
+A CAN bootloader for STM32F407 implementing UDS (ISO 14229-1) over ISO-TP (ISO 15765-2) for firmware updates, written from scratch (no third-party ISO-TP/UDS libraries).
 
-> **Status:** work in progress. See the [roadmap](#roadmap) for what is done and what is planned. Numbers in [Results](#results) are filled in only after they are measured.
+> **Status:** core update pipeline works end-to-end on real hardware. The final jump from bootloader to application is unreliable — see [Known issues](#known-issues). This is the honest state, not a demo-polished one.
 
 ## Why this project
-Field firmware updates over CAN are standard in automotive ECUs, and a bootloader that can be interrupted at any point without bricking the device is a real engineering problem, not a simple demo. 
 
-This project implements an automotive-grade update pipeline compliant with:
-* **ISO 14229-1 (UDS):** Application-layer diagnostic and flashing services (`0x10`, `0x34`, `0x36`, `0x37`, `0x31`).
-* **ISO 15765-2 (ISO-TP):** Transport layer network protocol for packet segmentation, flow control, and reassembly over standard 8-byte CAN frames.
+Field firmware updates over CAN are standard in automotive ECUs. The interesting engineering problem isn't "send bytes over CAN" — it's segmenting a multi-KB image into 8-byte CAN frames correctly, running a stateful diagnostic session on top of that, writing flash safely, and handing off execution to new code without the hardware's own caches lying to you. This project builds that path by hand: ISO-TP segmentation/reassembly, a UDS service state machine, a flash driver, and CRC32-based integrity verification.
 
-It covers the full path: flash partitioning, integrity verification (CRC32), power-loss recovery, and builds on my earlier [vehicle CAN bus simulator](https://github.com/GamzeAkcayy/stm32-can-node) (STM32 + Raspberry Pi, FreeRTOS, SocketCAN).
+It follows my earlier [vehicle CAN bus simulator](LINK_TO_YOUR_CAN_SIMULATOR_REPO) project (STM32 + Raspberry Pi, SocketCAN).
 
 ## Architecture
 
 ```
- Raspberry Pi (update client, Python)          STM32 target
+ Raspberry Pi (update_client.py)               STM32F407 target
  ┌───────────────────────────────┐            ┌──────────────────────────────┐
- │ firmware.bin + CRC32/signature│            │ Bootloader (fixed sectors)   │
- │ ISO-TP segmentation           │  CAN bus   │  UDS server, ISO-TP, flash   │
- │ UDS client                    │◄──────────►│  driver, CRC check, boot     │
- │ (python-can / SocketCAN)      │            │  decision                    │
+ │ firmware.bin + CRC32          │            │ Bootloader                   │
+ │ ISO-TP segmentation           │  CAN bus   │  UDS server, ISO-TP RX/TX,   │
+ │ UDS client (request/response) │◄──────────►│  flash driver, CRC check,    │
+ │ python-can / SocketCAN        │            │  boot decision               │
  └───────────────────────────────┘            ├──────────────────────────────┤
-                                              │ Application (updatable)      │
-                                              └──────────────────────────────┘
+                                               │ Application (updatable)      │
+                                               └──────────────────────────────┘
 ```
 
-> TODO: replace the ASCII diagram with a proper diagram (draw.io / Mermaid) once the design is final.
+### Flash layout (STM32F407VG, 1 MB flash)
 
-### Flash layout
+| Sector(s) | Address range           | Purpose                              |
+|-----------|--------------------------|---------------------------------------|
+| 0–1       | 0x08000000 – 0x08007FFF  | Bootloader (32 KB)                    |
+| 2–10      | 0x08008000 – 0x080DFFFF  | Application (updatable)               |
+| 11        | 0x080E0000 – 0x080FFFFF  | Metadata (magic, size, CRC32)         |
 
-| Region      | Purpose                                     | Notes                                    |
-|-------------|---------------------------------------------|------------------------------------------|
-| Bootloader  | UDS server, flash driver, boot logic        | Never overwritten by updates             |
-| Metadata    | Application size, CRC32, valid flag         | Written last, after verification         |
-| Application | Updatable firmware, own vector table        | Entered only if metadata is valid        |
-
-> TODO: fill in the actual sector addresses and sizes for your chip after the linker scripts are written.
+Metadata's magic word is written **last**, after size and CRC — so a power loss mid-write leaves the metadata block invalid rather than silently wrong.
 
 ### Boot decision
 
-1. Bootloader starts after reset.
-2. If update is requested (or the application is invalid), stay in bootloader and wait for a UDS session.
-3. Otherwise verify metadata and CRC32, then jump to the application (set vector table offset, load MSP, jump to reset handler).
+1. Bootloader starts after reset, opens a ~2 s window for a UDS session.
+2. If a programming session is requested, stay in the bootloader.
+3. Otherwise, check application metadata (magic + size bounds + CRC32 match) and attempt to jump to the application.
 
 ## Supported UDS services
 
-| SID  | Service                  | Purpose                              |
-|------|--------------------------|--------------------------------------|
-| 0x10 | DiagnosticSessionControl | Enter programming session            |
-| 0x31 | RoutineControl           | Erase flash, verify integrity        |
-| 0x34 | RequestDownload          | Announce address and size            |
-| 0x36 | TransferData             | Send firmware blocks                 |
-| 0x37 | RequestTransferExit      | Finish transfer                      |
-
-> Adjust this table to match what you actually implement.
+| SID  | Service                  | Status |
+|------|---------------------------|--------|
+| 0x10 | DiagnosticSessionControl | ✅ done |
+| 0x34 | RequestDownload          | ✅ done |
+| 0x36 | TransferData             | ✅ done (variable block size, block-counter validated) |
+| 0x37 | RequestTransferExit      | ✅ done |
+| 0x31 | RoutineControl           | ✅ done (used for CRC32 verification) |
+| 0x11 | ECUReset                 | ✅ done |
 
 ## Hardware
 
-- STM32 development board (TODO: exact model)
-- CAN transceiver (TODO: e.g. TJA1050 / SN65HVD230)
-- Raspberry Pi with a CAN interface (TODO: e.g. MCP2515 HAT)
-- USB logic analyzer for timing verification
+![Hardware setup](docs/hardware-setup.jpg)
+
+- STM32F407G-DISC1 (CAN node / target)
+- SN65HVD230 3.3V CAN transceiver
+- MCP2515 CAN controller + Raspberry Pi 4B (SocketCAN gateway, runs the update client)
+- CAN bus at 500 kbps
 
 ## Build and run
 
 ```bash
-# Bootloader
-cd bootloader
-make            # TODO: replace with your actual build command
-
-# Application (example firmware to be updated)
-cd ../app
-make
+# Bootloader and application are both STM32CubeIDE projects
+# Build bootloader/ and app/ separately in CubeIDE (or via headless make)
 
 # Update client (Raspberry Pi)
-cd ../tools
-pip install -r requirements.txt
-python update_client.py --interface can0 --firmware ../app/build/app.bin
+cd host
+python3 update_client.py   # delivers app/Debug/stm32_app.bin over CAN
 ```
 
-> TODO: replace commands with the real ones and document toolchain versions (arm-none-eabi-gcc, OpenOCD/STM32CubeProgrammer).
+## Verified so far
+
+Delivered a real, compiled ~36–38 KB `stm32_app.bin` entirely over CAN from a Raspberry Pi, and confirmed via CubeIDE's Memory view that:
+
+- ISO-TP correctly reassembles multi-frame transfers (SF/FF/CF/FC) for both request and ~64-byte data blocks
+- 0x34 → repeated 0x36 → 0x37 → 0x31(CRC) completes with positive responses at every step
+- Flash is erased and written at the correct addresses (0x08008000 onward)
+- Metadata (size + CRC32) lands correctly at 0x080E0000 and matches a CRC32 computed independently in Python (`zlib.crc32`), confirming the hand-written CRC32 implementation is correct
+- `update_client.py` reports elapsed time/throughput for the transfer — measured over 5 runs, see [Results](#results)
+
+This is the hard part of a bootloader — getting a real binary across CAN intact and verified — and it works repeatably.
+
+## Known issues
+
+**Jump to application is not reliable.** After a successful UDS transfer, `JumpToApplication()` is supposed to deinit peripherals, relocate the vector table, set the stack pointer, and branch into the application's reset handler. It has booted successfully exactly once, with a build that disabled/reset the flash ART cache before reading the application's stack pointer and entry address. The same fix did not reproduce reliably on later attempts, and root-causing it further would require instruction-level trace tooling this debugging session didn't have time to add. Current theory: some combination of flash cache state and peripheral teardown order is still wrong, but it hasn't been pinned down.
+
+**Power-loss recovery is unverified.** The mechanism exists (magic word written last) but has never been tested against an actual power cut mid-transfer.
 
 ## Testing
 
-- **Unit tests:** ISO-TP, CRC32 and UDS parsing (Unity/Ceedling), run on host.
-- **Hardware tests:** power-loss during transfer, corrupted image, wrong CRC, oversized image.
-- **CI:** build and unit tests on every push (GitHub Actions).
+- **Unit tests:** ISO-TP state machine only (`bootloader/tests/test_isotp.c`, runs on host via gcc with a mock CAN send).
+- **Hardware tests:** full UDS/flash/CRC pipeline manually verified multiple times with real firmware images (see above). No automated hardware-in-the-loop tests yet.
+- **CI:** none yet.
 
 ## Results
 
-### Verified so far
-Real flash write confirmed via CubeIDE Memory view after a full CAN-based UDS transfer (0x34 RequestDownload → 0x36 TransferData → 0x37 TransferExit): the bytes `AA BB CC DD` sent over CAN landed correctly at `0x08008000`, with the rest of the erased sector still showing `0xFFFFFFFF` (untouched).
+Measured on the hardware setup above: STM32F407G-DISC1 ↔ Raspberry Pi 4B, CAN bus at 500 kbps, image size 36864 bytes (36 KB, CRC32 `0x40CD96D5`), 5 consecutive update runs (flash erased and rewritten each time).
 
-![Flash write verification](docs/flash-write-verification.png)
+| Run | Time (s) | Throughput (KB/s) |
+|-----|----------|--------------------|
+| 1   | 8.4      | 4.3                |
+| 2   | 8.2      | 4.4                |
+| 3   | 8.2      | 4.4                |
+| 4   | 8.4      | 4.3                |
+| 5   | 8.2      | 4.4                |
 
-Filled in after measurement. Do not publish estimates as results.
+| Metric                              | Value                          |
+|--------------------------------------|--------------------------------|
+| Firmware delivered over CAN          | 36 KB, verified via CRC32 (`0x40CD96D5`) |
+| Update time (mean ± std dev, n=5)    | 8.28 s ± 0.10 s                |
+| Throughput (mean, n=5)               | 4.36 KB/s                      |
+| Boot jump success rate               | Unreliable — not yet quantified |
+| Recovery success after power loss    | Not tested                     |
 
-| Metric                          | Value | Test Setup                                |
-|---------------------------------|-------|--------------------------------------------|
-| Update time for 64 KB image     | TBD   | 500 kbps CAN, 64-byte block size           |
-| Recovery success after cut      | TBD   | N interruptions at random transfer points  |
-| Bootloader flash footprint      | TBD   | arm-none-eabi-gcc, -Os                     |
-| Corrupted image rejection       | TBD   | Bit-flip fault injection                   |
+Throughput is low relative to the 500 kbps bus — expected, since each ~64-byte TransferData block waits for a full UDS request/response round trip rather than streaming continuously. Worth noting as a known limitation rather than a surprise if asked about it.
+
 ## Roadmap
 
 - [x] Linker scripts for bootloader and application partitions
-- [x] Safe jump from bootloader to application
-- [x] ISO-TP receive/transmit
-- [x] UDS services (0x10, 0x31, 0x34, 0x36, 0x37)
+- [x] ISO-TP receive/transmit (hand-written, unit-tested)
+- [x] UDS services (0x10, 0x31, 0x34, 0x36, 0x37, 0x11)
 - [x] Flash erase/write driver
 - [x] CRC32 verification and metadata handling
-- [ ] Power-loss recovery
-- [ ] Python update client
-- [ ] Unit tests and CI
-- [ ] Measurements and demo video
-- [ ] Optional: signature verification (e.g. ECDSA) instead of CRC only
+- [x] Python update client
+- [ ] Safe, reliable jump from bootloader to application — **works once, not reproducible**
+- [ ] Power-loss recovery — mechanism exists, untested
+- [ ] Unit tests and CI beyond ISO-TP
+- [x] Measurements — throughput/timing (5 runs)
+- [ ] Demo video
+- [ ] Optional: signature verification (ECDSA) instead of CRC only
 
 ## Repository layout
 
 ```
-bootloader/   bootloader firmware
-app/          example application
-tools/        Python update client
-docs/         diagrams, measurements, notes
+bootloader/   bootloader firmware (ISO-TP, UDS, flash driver, boot logic)
+app/          example application (updatable firmware)
+host/         Python update client (update_client.py)
+docs/         diagrams, screenshots
 ```
 
 ## License
 
-MIT (TODO: add LICENSE file)
+MIT
