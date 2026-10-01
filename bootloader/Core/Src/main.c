@@ -467,9 +467,6 @@ void JumpToApplication(void) {
 		return;
 	}
 
-	uint32_t appStack = *(volatile uint32_t*) APP_ADDRESS;
-	uint32_t appEntry = *(volatile uint32_t*) (APP_ADDRESS + 4U);
-
 	__disable_irq();
 	HAL_CAN_DeInit(&hcan1);
 	SysTick->CTRL = 0;
@@ -487,15 +484,12 @@ void JumpToApplication(void) {
 	__HAL_FLASH_INSTRUCTION_CACHE_ENABLE();
 	__HAL_FLASH_DATA_CACHE_ENABLE();
 
+	uint32_t appStack = *(volatile uint32_t*) APP_ADDRESS;
+	uint32_t appEntry = *(volatile uint32_t*) (APP_ADDRESS + 4U);
+
 	__set_MSP(appStack);
 	SCB->VTOR = APP_ADDRESS;
 	__enable_irq();
-
-	if ((appEntry & 1U) == 0U) {
-	    // Thumb biti YOK - bu normalde olmamalı
-	    GPIOD->BSRR = (1U << 12);  // yeşil: Thumb bit eksik!
-	    while(1);
-	}
 
 	((pFunction) appEntry)();
 }
