@@ -157,17 +157,17 @@ int main(void) {
 		(HAL_GetTick() - bootStart) > BOOT_WINDOW_MS) {
 			appChecked = 1;
 			if (Flash_AppIsValid()) {
-				JumpToApplication();
+			    JumpToApplication();
 			}
-		}
 
 		/* USER CODE END WHILE */
-		MX_USB_HOST_Process();
+
 
 		/* USER CODE BEGIN 3 */
 	}
+		MX_USB_HOST_Process();
 	/* USER CODE END 3 */
-}
+}}
 /**
  * @brief System Clock Configuration
  * @retval None
@@ -471,18 +471,24 @@ void JumpToApplication(void) {
 	uint32_t appEntry = *(volatile uint32_t*) (APP_ADDRESS + 4U);
 
 	__disable_irq();
-
-	HAL_CAN_DeInit(&hcan1);        /* CAN'i tamamen kapat, kesmesini de */
-	SysTick->CTRL = 0;              /* SysTick kesmesini durdur */
-
+	HAL_CAN_DeInit(&hcan1);
+	SysTick->CTRL = 0;
 	for (uint8_t i = 0; i < 8; i++) {
 		NVIC->ICER[i] = 0xFFFFFFFFU;
 		NVIC->ICPR[i] = 0xFFFFFFFFU;
 	}
+	HAL_RCC_DeInit();
+	HAL_InitTick(TICK_INT_PRIORITY);
+
+	__HAL_FLASH_INSTRUCTION_CACHE_DISABLE();
+	__HAL_FLASH_DATA_CACHE_DISABLE();
+	__HAL_FLASH_INSTRUCTION_CACHE_RESET();
+	__HAL_FLASH_DATA_CACHE_RESET();
+	__HAL_FLASH_INSTRUCTION_CACHE_ENABLE();
+	__HAL_FLASH_DATA_CACHE_ENABLE();
 
 	__set_MSP(appStack);
 	SCB->VTOR = APP_ADDRESS;
-
 	__enable_irq();
 
 	((pFunction) appEntry)();

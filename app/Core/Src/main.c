@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_host.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -74,52 +73,25 @@ void MX_USB_HOST_Process(void);
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
-	  /* KURAL 2: İşlemciye yeni acil durum listesinin (Vektör Tablosu) yerini söyle */
-	  SCB->VTOR = 0x08008000U; // App'in başladığı Flash adresi
-	  __enable_irq();           // Bootloader'da kapattığımız kesmeleri tekrar serbest bırak
 
-	  /* MCU Configuration--------------------------------------------------------*/
-	  HAL_Init();
-	  SystemClock_Config();
-
-	  /* ... Diğer çevre birimleri (CAN, GPIO vs.) ... */
   /* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
+	  HAL_Init();
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	  SystemClock_Config();
+	  MX_GPIO_Init();
+	  MX_I2S3_Init();
+	  MX_SPI1_Init();
+	  MX_USB_HOST_Init();
+	  MX_CAN1_Init();
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_I2S3_Init();
-  MX_SPI1_Init();
-  MX_USB_HOST_Init();
-  MX_CAN1_Init();
-  /* USER CODE BEGIN 2 */
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
-    MX_USB_HOST_Process();
-
+	    HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+	    HAL_Delay(200);
+	    MX_USB_HOST_Process();
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -395,13 +367,11 @@ static void MX_GPIO_Init(void)
   */
 void Error_Handler(void)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
+
   }
-  /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
 /**
