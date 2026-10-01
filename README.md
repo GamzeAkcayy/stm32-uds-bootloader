@@ -53,7 +53,7 @@ Metadata's magic word is written **last**, after size and CRC — so a power los
 
 ## Hardware
 
-![Hardware setup](docs/hardware-setup.jpg)
+![Hardware setup](docs/hardware_setup.jpg)
 
 - STM32F407G-DISC1 (CAN node / target)
 - SN65HVD230 3.3V CAN transceiver
