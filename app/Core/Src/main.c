@@ -79,12 +79,6 @@ int main(void)
 	  /* KURAL 2: İşlemciye yeni acil durum listesinin (Vektör Tablosu) yerini söyle */
 	  SCB->VTOR = 0x08008000U; // App'in başladığı Flash adresi
 	  __enable_irq();           // Bootloader'da kapattığımız kesmeleri tekrar serbest bırak
-
-	  /* MCU Configuration--------------------------------------------------------*/
-	  HAL_Init();
-	  SystemClock_Config();
-
-	  /* ... Diğer çevre birimleri (CAN, GPIO vs.) ... */
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -121,6 +115,12 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
+    /* Turuncu LED (LD3, PD13): uygulamanın çalıştığının görünür kanıtı */
+    static uint32_t lastToggle = 0;
+    if (HAL_GetTick() - lastToggle >= 500U) {
+      lastToggle = HAL_GetTick();
+      HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+    }
   }
   /* USER CODE END 3 */
 }

@@ -158,6 +158,11 @@ int main(void) {
 			appChecked = 1;
 			if (Flash_AppIsValid()) {
 				JumpToApplication();
+				/* buraya dönüldüyse: kayıt/CRC tamam ama vektör tablosu geçersiz */
+				HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_SET);   /* yeşil */
+			} else {
+				/* metadata yok ya da CRC tutmuyor (0x31 gönderilmedi / yanlış CRC) */
+				HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);   /* kırmızı */
 			}
 		}
 
